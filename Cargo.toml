@@ -8,4 +8,4 @@ readme = "README.md"
 license = "MIT"
 
 [dependencies]
-bevy = "0.18.0"
+bevy = { version = "0.18.0", features = [ "debug" ] }

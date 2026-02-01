@@ -2,11 +2,13 @@
 // Author: Antonio Caggiano <info@antoniocaggiano.eu>
 // SPDX-License-Identifier: MIT
 
+mod controller;
+
 use bevy::prelude::*;
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins)
+        .add_plugins((DefaultPlugins, controller::ControllerPlugin))
         .add_systems(Startup, setup)
         .run();
 }
@@ -25,11 +27,13 @@ fn setup(
     ));
 
     // Cube
-    commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
-        MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
-        Transform::from_xyz(0.0, 0.5, 0.0),
-    ));
+    commands
+        .spawn((
+            Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
+            MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
+            Transform::from_xyz(0.0, 0.5, 0.0),
+        ))
+        .with_children(controller::spawn);
 
     // Light
     commands.spawn((
@@ -38,11 +42,5 @@ fn setup(
             ..default()
         },
         Transform::from_xyz(4.0, 8.0, 4.0),
-    ));
-
-    // Camera
-    commands.spawn((
-        Camera3d::default(),
-        Transform::from_xyz(-2.5, 4.5, 9.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
 }
