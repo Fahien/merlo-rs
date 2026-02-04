@@ -3,257 +3,307 @@
 // SPDX-License-Identifier: MIT
 
 use bevy::{
-    camera::primitives::{Aabb, MeshAabb},
-    ecs::relationship::{RelatedSpawnerCommands, Relationship},
+    ecs::query::{Has, QueryData},
     input::mouse::MouseMotion,
-    math::bounding::{Aabb3d, RayCast3d},
     prelude::*,
-    transform::TransformSystems,
-    window::PrimaryWindow,
 };
+use bevy_rapier3d::prelude::*;
 
-pub struct ControllerPlugin;
+pub struct CharacterControllerPlugin;
 
-impl Plugin for ControllerPlugin {
+#[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
+enum CharacterControllerSet {
+    Input,
+    Grounded,
+    Movement,
+    Damping,
+}
+
+impl Plugin for CharacterControllerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_message::<Mesh3dClicked>()
-            .add_systems(Startup, setup)
-            .add_systems(Update, (player_move, mouse_look))
-            .add_systems(
-                PostUpdate,
+        app.add_message::<MovementAction>()
+            .configure_sets(
+                Update,
                 (
-                    pick_mesh3d_on_left_click.after(TransformSystems::Propagate),
-                    mesh3d_clicked.after(pick_mesh3d_on_left_click),
-                ),
+                    CharacterControllerSet::Input,
+                    CharacterControllerSet::Grounded,
+                    CharacterControllerSet::Movement,
+                    CharacterControllerSet::Damping,
+                )
+                    .chain(),
+            )
+            .add_systems(
+                Update,
+                (keyboard_input, gamepad_input, mouse_input).in_set(CharacterControllerSet::Input),
+            )
+            .add_systems(
+                Update,
+                update_grounded.in_set(CharacterControllerSet::Grounded),
+            )
+            .add_systems(Update, movement.in_set(CharacterControllerSet::Movement))
+            .add_systems(
+                Update,
+                apply_movement_damping.in_set(CharacterControllerSet::Damping),
             );
     }
 }
 
-#[derive(Message, Debug, Clone, Copy)]
-pub struct Mesh3dClicked {
-    entity: Entity,
+/// A [`Message`] written for a movement input action.
+#[derive(Message)]
+pub enum MovementAction {
+    Move(Vec2),
+    Rotate(f32),
+    Jump,
 }
 
-impl Mesh3dClicked {
-    pub fn new(entity: Entity) -> Self {
-        Self { entity }
-    }
-
-    pub fn entity(&self) -> Entity {
-        self.entity
-    }
-}
-
-fn mesh3d_clicked(
-    mut mesh_clicked: MessageReader<Mesh3dClicked>,
-    mut commands: Commands,
-    controller: Single<(Entity, &ChildOf), With<Controller>>,
-) {
-    for msg in mesh_clicked.read() {
-        if msg.entity() == controller.1.parent() {
-            continue;
-        }
-        move_controller(&mut commands, msg.entity(), &controller);
-    }
-}
-
-fn move_controller(
-    commands: &mut Commands,
-    next: Entity,
-    controller: &Single<(Entity, &ChildOf), With<Controller>>,
-) {
-    // Remove parent from the controller
-    commands.entity(controller.0).remove::<ChildOf>();
-
-    // Set the new parent to the clicked entity
-    commands.entity(controller.0).insert(ChildOf(next));
-}
-
-/// Controller component for moving an entity.
-/// The controller follows the controlled entity.
+/// A marker component indicating that an entity is using a character controller.
 #[derive(Component)]
-pub struct Controller;
+pub struct CharacterController;
 
-/// Spawns a dummy entity to be controlled, with a camera pivot and a camera as child.
-pub fn setup(mut commands: Commands) {
-    commands
-        .spawn((
-            Transform::from_xyz(0.0, 0.5, 0.0),
-            InheritedVisibility::default(),
-        ))
-        .with_children(spawn);
+/// A marker component indicating that an entity is on the ground.
+#[derive(Component)]
+#[component(storage = "SparseSet")]
+pub struct Grounded;
+
+/// The acceleration used for character movement.
+#[derive(Component)]
+pub struct MovementAcceleration(f32);
+
+/// The damping factor used for slowing down movement.
+#[derive(Component)]
+pub struct MovementDampingFactor(f32);
+
+/// The strength of a jump.
+#[derive(Component)]
+pub struct JumpImpulse(f32);
+
+/// The maximum angle a slope can have for a character controller
+/// to be able to climb and jump. If the slope is steeper than this angle,
+/// the character will slide down.
+#[derive(Component)]
+pub struct MaxSlopeAngle(f32);
+
+/// A bundle that contains the components needed for a basic
+/// physics-driven character controller.
+#[derive(Bundle)]
+pub struct CharacterControllerBundle {
+    character_controller: CharacterController,
+    collider: Collider,
+    body: RigidBody,
+    velocity: Velocity,
+    locked_axes: LockedAxes,
+    gravity_scale: GravityScale,
+    movement: MovementBundle,
 }
 
-pub fn spawn<R: Relationship>(parent: &mut RelatedSpawnerCommands<R>) {
-    parent
-        .spawn((
-            Controller,
-            Transform::from_xyz(0.0, 1.5, 0.0),
-            InheritedVisibility::default(),
-        ))
-        .with_children(|pivot| {
-            // Camera offset behind the pivot
-            pivot.spawn((
-                Camera3d::default(),
-                Transform::from_xyz(0.0, 0.0, 6.0).looking_at(Vec3::ZERO, Vec3::Y),
-            ));
-        });
+/// A bundle that contains components for character movement.
+#[derive(Bundle)]
+pub struct MovementBundle {
+    acceleration: MovementAcceleration,
+    damping: MovementDampingFactor,
+    jump_impulse: JumpImpulse,
+    max_slope_angle: MaxSlopeAngle,
 }
 
-fn player_move(
-    time: Res<Time>,
-    keys: Res<ButtonInput<KeyCode>>,
-    mut q_transforms: Query<&mut Transform>,
-    pivot: Single<&ChildOf, With<Controller>>,
-) -> Result<()> {
-    let mut input = Vec3::ZERO;
-    if keys.pressed(KeyCode::KeyW) {
-        input.z += 1.0;
+impl MovementBundle {
+    pub const fn new(
+        acceleration: f32,
+        damping: f32,
+        jump_impulse: f32,
+        max_slope_angle: f32,
+    ) -> Self {
+        Self {
+            acceleration: MovementAcceleration(acceleration),
+            damping: MovementDampingFactor(damping),
+            jump_impulse: JumpImpulse(jump_impulse),
+            max_slope_angle: MaxSlopeAngle(max_slope_angle),
+        }
     }
-    if keys.pressed(KeyCode::KeyS) {
-        input.z -= 1.0;
-    }
-    if keys.pressed(KeyCode::KeyA) {
-        input.x -= 1.0;
-    }
-    if keys.pressed(KeyCode::KeyD) {
-        input.x += 1.0;
-    }
-
-    if input.length_squared() > 0.0 {
-        input = input.normalize();
-    }
-
-    let tf = &mut q_transforms.get_mut(pivot.parent()).unwrap();
-
-    let forward = tf.rotation * Vec3::NEG_Z;
-    let right = tf.rotation * Vec3::X;
-
-    let speed = 4.0;
-    tf.translation += (forward * input.z + right * input.x) * speed * time.delta_secs();
-
-    Ok(())
 }
 
-fn mouse_look(
-    mut mouse_motion_events: MessageReader<MouseMotion>,
-    buttons: Res<ButtonInput<MouseButton>>,
-    mut q_transforms: Query<&mut Transform>,
-    pivot: Single<(Entity, &ChildOf), With<Controller>>,
+impl Default for MovementBundle {
+    fn default() -> Self {
+        Self::new(30.0, 0.9, 7.0, std::f32::consts::PI * 0.45)
+    }
+}
+
+impl CharacterControllerBundle {
+    pub fn new(collider: Collider, gravity_scale: f32) -> Self {
+        Self {
+            character_controller: CharacterController,
+            collider,
+            body: RigidBody::Dynamic,
+            velocity: Velocity::default(),
+            locked_axes: LockedAxes::ROTATION_LOCKED_X | LockedAxes::ROTATION_LOCKED_Z,
+            gravity_scale: GravityScale(gravity_scale),
+            movement: MovementBundle::default(),
+        }
+    }
+
+    pub fn with_movement(
+        mut self,
+        acceleration: f32,
+        damping: f32,
+        jump_impulse: f32,
+        max_slope_angle: f32,
+    ) -> Self {
+        self.movement = MovementBundle::new(acceleration, damping, jump_impulse, max_slope_angle);
+        self
+    }
+}
+
+/// Sends [`MovementAction`] events based on keyboard input.
+fn keyboard_input(
+    mut movement_writer: MessageWriter<MovementAction>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+) {
+    let up = keyboard_input.any_pressed([KeyCode::KeyW, KeyCode::ArrowUp]);
+    let down = keyboard_input.any_pressed([KeyCode::KeyS, KeyCode::ArrowDown]);
+    let left = keyboard_input.pressed(KeyCode::KeyQ);
+    let right = keyboard_input.pressed(KeyCode::KeyE);
+
+    let horizontal = right as i8 - left as i8;
+    let vertical = up as i8 - down as i8;
+    let direction = Vec2::new(horizontal as f32, vertical as f32).clamp_length_max(1.0);
+
+    if direction != Vec2::ZERO {
+        movement_writer.write(MovementAction::Move(direction));
+    }
+
+    let rotate_left = keyboard_input.any_pressed([KeyCode::KeyA, KeyCode::ArrowLeft]);
+    let rotate_right = keyboard_input.any_pressed([KeyCode::KeyD, KeyCode::ArrowRight]);
+    if rotate_left && !rotate_right {
+        movement_writer.write(MovementAction::Rotate(1.0));
+    } else if rotate_right && !rotate_left {
+        movement_writer.write(MovementAction::Rotate(-1.0));
+    }
+
+    if keyboard_input.just_pressed(KeyCode::Space) {
+        movement_writer.write(MovementAction::Jump);
+    }
+}
+
+/// Sends [`MovementAction`] events based on gamepad input.
+fn gamepad_input(mut movement_writer: MessageWriter<MovementAction>, gamepads: Query<&Gamepad>) {
+    for gamepad in gamepads.iter() {
+        if let (Some(x), Some(y)) = (
+            gamepad.get(GamepadAxis::LeftStickX),
+            gamepad.get(GamepadAxis::LeftStickY),
+        ) {
+            movement_writer.write(MovementAction::Move(Vec2::new(x, y).clamp_length_max(1.0)));
+        }
+
+        if gamepad.just_pressed(GamepadButton::South) {
+            movement_writer.write(MovementAction::Jump);
+        }
+    }
+}
+
+fn mouse_input(
+    mut movement_writer: MessageWriter<MovementAction>,
+    mut mouse_reader: MessageReader<MouseMotion>,
+    mouse_buttons: Res<ButtonInput<MouseButton>>,
 ) {
     // Hold RMB to look around
-    if !buttons.pressed(MouseButton::Right) {
-        mouse_motion_events.clear();
+    if !mouse_buttons.pressed(MouseButton::Right) {
+        mouse_reader.clear();
         return;
     }
 
     let mut delta = Vec2::ZERO;
-    for ev in mouse_motion_events.read() {
+    for ev in mouse_reader.read() {
         delta += ev.delta;
     }
     if delta == Vec2::ZERO {
         return;
     }
 
-    let player_tf = &mut q_transforms.get_mut(pivot.1.parent()).unwrap();
-
-    let sensitivity = 0.002;
-
-    // 1) Yaw: rotate player around WORLD up
-    let yaw = -delta.x * sensitivity;
-    let q_yaw = Quat::from_axis_angle(Vec3::Y, yaw);
-    player_tf.rotation = q_yaw * player_tf.rotation;
-
-    let pivot_tf = &mut q_transforms.get_mut(pivot.0).unwrap();
-
-    // 2) Pitch: rotate camera pivot around its LOCAL X
-    let pitch_delta = -delta.y * sensitivity;
-
-    // Compute current pitch from pivot forward vector
-    let forward = pivot_tf.rotation * Vec3::NEG_Z;
-    let current_pitch = forward.y.clamp(-1.0, 1.0).asin();
-
-    let max_pitch = 1.2; // ~69 degrees
-    let target_pitch = (current_pitch + pitch_delta).clamp(-max_pitch, max_pitch);
-    let allowed_delta = target_pitch - current_pitch;
-
-    let q_pitch = Quat::from_axis_angle(Vec3::X, allowed_delta);
-    pivot_tf.rotation *= q_pitch;
+    let sensitivity = 0.125;
+    movement_writer.write(MovementAction::Rotate(-delta.x * sensitivity));
 }
 
-fn pick_mesh3d_on_left_click(
-    buttons: Res<ButtonInput<MouseButton>>,
-    window: Single<&Window, With<PrimaryWindow>>,
-    camera: Single<(&Camera, &GlobalTransform), With<Camera3d>>,
-    meshes: Res<Assets<Mesh>>,
-    mesh_query: Query<(Entity, &Mesh3d, &GlobalTransform, Option<&Aabb>)>,
-    mut mesh_clicked: MessageWriter<Mesh3dClicked>,
+/// Updates the [`Grounded`] status for character controllers.
+fn update_grounded(
+    rapier_context: ReadRapierContext,
+    mut commands: Commands,
+    query: Query<(Entity, &Transform, Option<&MaxSlopeAngle>), With<CharacterController>>,
 ) {
-    if !buttons.just_pressed(MouseButton::Left) {
+    let Ok(rapier_context) = rapier_context.single() else {
         return;
+    };
+
+    // Tuned for the default capsule used in `main.rs` (radius=0.0, half_height=0.5).
+    const PROBE_ORIGIN_TO_FOOT: f32 = 0.5;
+    const PROBE_DISTANCE: f32 = 0.5;
+
+    for (entity, transform, max_slope_angle) in &query {
+        let origin = transform.translation - Vec3::Y * (PROBE_ORIGIN_TO_FOOT - 0.01);
+        let dir = -Vec3::Y;
+        let filter = QueryFilter::default().exclude_collider(entity);
+
+        let is_grounded = rapier_context
+            .cast_ray_and_get_normal(origin, dir, PROBE_DISTANCE, true, filter)
+            .is_some_and(|(_, intersection)| match max_slope_angle {
+                Some(angle) => intersection.normal.angle_between(Vec3::Y).abs() <= angle.0,
+                None => true,
+            });
+
+        if is_grounded {
+            commands.entity(entity).insert(Grounded);
+        } else {
+            commands.entity(entity).remove::<Grounded>();
+        }
     }
+}
 
-    let Some(cursor_position) = window.cursor_position() else {
-        return;
-    };
+#[derive(QueryData)]
+#[query_data(mutable)]
+struct MovementData {
+    movement_acceleration: &'static MovementAcceleration,
+    transform: &'static Transform,
+    jump_impulse: &'static JumpImpulse,
+    velocity: &'static mut Velocity,
+    grounded: Has<Grounded>,
+}
 
-    let (camera, camera_transform) = *camera;
-    let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position) else {
-        return;
-    };
+/// Responds to [`MovementAction`] events and moves character controllers accordingly.
+fn movement(
+    time: Res<Time>,
+    mut movement_reader: MessageReader<MovementAction>,
+    mut controllers: Query<MovementData>,
+) {
+    let delta_time = time.delta_secs();
 
-    let mut closest_hit: Option<(Entity, f32)> = None;
-    for (entity, mesh_handle, mesh_transform, aabb) in &mesh_query {
-        let aabb = match aabb {
-            Some(aabb) => *aabb,
-            None => {
-                let Some(mesh) = meshes.get(mesh_handle) else {
-                    continue;
-                };
-                let Some(aabb) = mesh.compute_aabb() else {
-                    continue;
-                };
-                aabb
+    for event in movement_reader.read() {
+        for mut data in &mut controllers {
+            match event {
+                MovementAction::Move(direction) => {
+                    let local = Vec3::new(direction.x, 0.0, -direction.y);
+                    let mut world = data.transform.rotation * local;
+                    world.y = 0.0;
+                    world = world.normalize_or_zero();
+                    data.velocity.linvel.x += world.x * data.movement_acceleration.0 * delta_time;
+                    data.velocity.linvel.z += world.z * data.movement_acceleration.0 * delta_time;
+                }
+                MovementAction::Rotate(direction) => {
+                    data.velocity.angvel.y += direction * 30.0 * delta_time;
+                }
+                MovementAction::Jump => {
+                    if data.grounded {
+                        data.velocity.linvel.y = data.jump_impulse.0;
+                    }
+                }
             }
-        };
-
-        let world_to_local = mesh_transform.affine().inverse();
-        let local_origin: Vec3 = world_to_local.transform_point3a(ray.origin.into()).into();
-        let local_direction: Vec3 = world_to_local
-            .transform_vector3a((*ray.direction).into())
-            .into();
-        let Ok(local_direction) = Dir3::new(local_direction) else {
-            continue;
-        };
-
-        let local_ray = Ray3d::new(local_origin, local_direction);
-        let raycast = RayCast3d::from_ray(local_ray, f32::MAX);
-        let local_aabb = Aabb3d::new(aabb.center, aabb.half_extents);
-
-        let Some(local_distance) = raycast.aabb_intersection_at(&local_aabb) else {
-            continue;
-        };
-
-        let local_hit_position = local_ray.get_point(local_distance);
-        let world_hit_position: Vec3 = mesh_transform
-            .affine()
-            .transform_point3a(local_hit_position.into())
-            .into();
-        let world_distance = (world_hit_position - ray.origin).dot(*ray.direction);
-
-        if world_distance <= 0.0 {
-            continue;
-        }
-
-        match closest_hit {
-            Some((_, closest_distance)) if world_distance >= closest_distance => {}
-            _ => closest_hit = Some((entity, world_distance)),
         }
     }
+}
 
-    let Some((entity, _)) = closest_hit else {
-        return;
-    };
-
-    mesh_clicked.write(Mesh3dClicked::new(entity));
+/// Slows down movement in the XZ plane.
+fn apply_movement_damping(mut query: Query<(&MovementDampingFactor, &mut Velocity)>) {
+    for (damping_factor, mut velocity) in &mut query {
+        // We could use `Damping`, but we don't want to dampen movement along the Y axis.
+        velocity.linvel.x *= damping_factor.0;
+        velocity.linvel.z *= damping_factor.0;
+        velocity.angvel.y *= damping_factor.0;
+    }
 }

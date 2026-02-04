@@ -8,4 +8,5 @@ readme = "README.md"
 license = "MIT"
 
 [dependencies]
-bevy = { version = "0.18.0", features = [ "debug" ] }
+bevy = "0.17.3"
+bevy_rapier3d = "0.32.0"
