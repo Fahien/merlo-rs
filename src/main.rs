@@ -2,6 +2,7 @@
 // Author: Antonio Caggiano <info@antoniocaggiano.eu>
 // SPDX-License-Identifier: MIT
 
+mod animation;
 mod camera;
 mod controller;
 
@@ -18,21 +19,26 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
+        .add_plugins(RapierDebugRenderPlugin::default())
         .add_plugins(camera::CameraPlugin)
         .add_plugins(controller::CharacterControllerPlugin)
         .add_plugins(EguiPlugin::default())
         .add_plugins(DefaultInspectorConfigPlugin)
         .add_systems(Startup, setup)
         .add_systems(EguiPrimaryContextPass, ui)
+        .add_plugins(animation::CharacterAnimationPlugin)
         .init_resource::<UiState>()
         .run();
 }
+
+const CHARACTER_PATH: &str = "character-large-male.glb";
 
 /// Set up a simple 3D scene
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    asset_server: Res<AssetServer>,
 ) {
     // Circular base
     commands.spawn((
@@ -44,11 +50,11 @@ fn setup(
 
     // Cube 1
     commands.spawn((
+        RigidBody::Dynamic,
+        Collider::cuboid(0.5, 0.5, 0.5),
         Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
         MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
         Transform::from_xyz(0.0, 1.0, 0.0),
-        controller::CharacterControllerBundle::new(Collider::capsule_y(0.0, 0.5), 2.0)
-            .with_movement(30.0, 0.92, 7.0, 30.0_f32.to_radians()),
     ));
 
     // Cube 2
@@ -59,6 +65,18 @@ fn setup(
         MeshMaterial3d(materials.add(Color::srgb_u8(144, 124, 255))),
         Transform::from_xyz(1.0, 0.5, 0.0),
     ));
+
+    // Character
+    let scene: Handle<Scene> = asset_server.load(format!("{}#Scene0", CHARACTER_PATH));
+    commands
+        .spawn((
+            Transform::from_xyz(0.0, 1.5, 0.0),
+            controller::CharacterControllerBundle::new(Collider::capsule_y(1.0, 0.5), 2.0)
+                .with_movement(60.0, 0.92, 7.0, 30.0_f32.to_radians()),
+        ))
+        .with_children(|commands| {
+            commands.spawn((SceneRoot(scene), Transform::from_xyz(0.0, -1.5, 0.0)));
+        });
 
     // Light
     commands.spawn((
