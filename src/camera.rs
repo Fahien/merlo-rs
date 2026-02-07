@@ -76,7 +76,7 @@ pub struct Controller;
 pub fn setup(mut commands: Commands) {
     commands
         .spawn((
-            Transform::from_xyz(0.0, 0.5, 0.0),
+            Transform::from_xyz(0.0, 3.0, 0.0),
             InheritedVisibility::default(),
         ))
         .with_children(spawn);
@@ -86,14 +86,14 @@ pub fn spawn<R: Relationship>(parent: &mut RelatedSpawnerCommands<R>) {
     parent
         .spawn((
             Controller,
-            Transform::from_xyz(0.0, 1.5, 0.0),
+            Transform::from_xyz(0.0, 3.0, 0.0),
             InheritedVisibility::default(),
         ))
         .with_children(|pivot| {
             // Camera offset behind the pivot
             pivot.spawn((
                 Camera3d::default(),
-                Transform::from_xyz(0.0, 0.0, 6.0).looking_at(Vec3::ZERO, Vec3::Y),
+                Transform::from_xyz(0.0, 0.0, -12.0).looking_at(Vec3::ZERO, Vec3::Y),
             ));
         });
 }
