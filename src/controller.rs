@@ -52,6 +52,7 @@ impl Plugin for CharacterControllerPlugin {
 #[derive(Message)]
 pub enum MovementAction {
     Move(Vec2),
+    Walk(Vec2),
     Rotate(f32),
     Jump,
 }
@@ -161,13 +162,18 @@ fn keyboard_input(
     let down = keyboard_input.any_pressed([KeyCode::KeyS, KeyCode::ArrowDown]);
     let left = keyboard_input.pressed(KeyCode::KeyQ);
     let right = keyboard_input.pressed(KeyCode::KeyE);
+    let shift = keyboard_input.pressed(KeyCode::ShiftLeft);
 
     let horizontal = right as i8 - left as i8;
     let vertical = up as i8 - down as i8;
     let direction = Vec2::new(horizontal as f32, vertical as f32).clamp_length_max(1.0);
 
     if direction != Vec2::ZERO {
-        movement_writer.write(MovementAction::Move(direction));
+        if shift {
+            movement_writer.write(MovementAction::Walk(direction));
+        } else {
+            movement_writer.write(MovementAction::Move(direction));
+        }
     }
 
     let rotate_left = keyboard_input.any_pressed([KeyCode::KeyA, KeyCode::ArrowLeft]);
@@ -233,7 +239,7 @@ fn update_grounded(
     };
 
     // Tuned for the default capsule used in `main.rs` (radius=0.0, half_height=0.5).
-    const PROBE_ORIGIN_TO_FOOT: f32 = 0.5;
+    const PROBE_ORIGIN_TO_FOOT: f32 = 1.5;
     const PROBE_DISTANCE: f32 = 0.5;
 
     for (entity, transform, max_slope_angle) in &query {
@@ -278,12 +284,22 @@ fn movement(
         for mut data in &mut controllers {
             match event {
                 MovementAction::Move(direction) => {
-                    let local = Vec3::new(direction.x, 0.0, -direction.y);
+                    let local = Vec3::new(-direction.x, 0.0, direction.y);
                     let mut world = data.transform.rotation * local;
                     world.y = 0.0;
                     world = world.normalize_or_zero();
                     data.velocity.linvel.x += world.x * data.movement_acceleration.0 * delta_time;
                     data.velocity.linvel.z += world.z * data.movement_acceleration.0 * delta_time;
+                }
+                MovementAction::Walk(direction) => {
+                    let local = Vec3::new(-direction.x, 0.0, direction.y);
+                    let mut world = data.transform.rotation * local;
+                    world.y = 0.0;
+                    world = world.normalize_or_zero();
+                    data.velocity.linvel.x +=
+                        world.x * data.movement_acceleration.0 * delta_time * 0.5;
+                    data.velocity.linvel.z +=
+                        world.z * data.movement_acceleration.0 * delta_time * 0.5;
                 }
                 MovementAction::Rotate(direction) => {
                     data.velocity.angvel.y += direction * 30.0 * delta_time;
