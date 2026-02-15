@@ -72,7 +72,7 @@ fn setup(
         .spawn((
             Transform::from_xyz(0.0, 1.5, 0.0),
             controller::CharacterControllerBundle::new(Collider::capsule_y(1.0, 0.5), 2.0)
-                .with_movement(60.0, 0.92, 7.0, 30.0_f32.to_radians()),
+                .with_movement(60.0, 8.0, 30.0_f32.to_radians()),
         ))
         .with_children(|commands| {
             commands.spawn((SceneRoot(scene), Transform::from_xyz(0.0, -1.5, 0.0)));
