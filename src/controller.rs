@@ -274,35 +274,36 @@ struct MovementData {
 
 /// Responds to [`MovementAction`] events and moves character controllers accordingly.
 fn movement(
-    time: Res<Time>,
     mut movement_reader: MessageReader<MovementAction>,
     mut controllers: Query<MovementData>,
 ) {
-    let delta_time = time.delta_secs();
+    for mut data in &mut controllers {
+        // Reset horizontal movement and rotation. This allows us to have discrete movement input each frame, which is easier to
+        // work with and feels better than continuous acceleration.
+        data.velocity.linvel.x = 0.0;
+        data.velocity.linvel.z = 0.0;
+        data.velocity.angvel.y = 0.0;
 
-    for event in movement_reader.read() {
-        for mut data in &mut controllers {
+        for event in movement_reader.read() {
             match event {
                 MovementAction::Move(direction) => {
                     let local = Vec3::new(-direction.x, 0.0, direction.y);
                     let mut world = data.transform.rotation * local;
                     world.y = 0.0;
                     world = world.normalize_or_zero();
-                    data.velocity.linvel.x += world.x * data.movement_acceleration.0 * delta_time;
-                    data.velocity.linvel.z += world.z * data.movement_acceleration.0 * delta_time;
+                    data.velocity.linvel.x = world.x * data.movement_acceleration.0 * 0.15;
+                    data.velocity.linvel.z = world.z * data.movement_acceleration.0 * 0.15;
                 }
                 MovementAction::Walk(direction) => {
                     let local = Vec3::new(-direction.x, 0.0, direction.y);
                     let mut world = data.transform.rotation * local;
                     world.y = 0.0;
                     world = world.normalize_or_zero();
-                    data.velocity.linvel.x +=
-                        world.x * data.movement_acceleration.0 * delta_time * 0.5;
-                    data.velocity.linvel.z +=
-                        world.z * data.movement_acceleration.0 * delta_time * 0.5;
+                    data.velocity.linvel.x = (world.x * data.movement_acceleration.0 * 0.1) / 2.0;
+                    data.velocity.linvel.z = (world.z * data.movement_acceleration.0 * 0.1) / 2.0;
                 }
                 MovementAction::Rotate(direction) => {
-                    data.velocity.angvel.y += direction * 30.0 * delta_time;
+                    data.velocity.angvel.y = direction * 4.0;
                 }
                 MovementAction::Jump => {
                     if data.grounded {
