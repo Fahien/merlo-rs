@@ -3,6 +3,8 @@ use std::time::Duration;
 use bevy::prelude::*;
 use bevy_rapier3d::prelude::*;
 
+use crate::controller::Grounded;
+
 pub struct CharacterAnimationPlugin;
 
 impl Plugin for CharacterAnimationPlugin {
@@ -33,9 +35,15 @@ fn setup(
         .load(GltfAssetLabel::Animation(0).from_asset(format!("{character_prefix}-idle.glb")));
     let walk_animation = asset_server
         .load(GltfAssetLabel::Animation(0).from_asset(format!("{character_prefix}-walk.glb")));
+    let fall_animation = asset_server
+        .load(GltfAssetLabel::Animation(0).from_asset(format!("{character_prefix}-fall.glb")));
 
-    let (graph, indices) =
-        AnimationGraph::from_clips([idle_animation, walk_animation, running_animation]);
+    let (graph, indices) = AnimationGraph::from_clips([
+        idle_animation,
+        walk_animation,
+        running_animation,
+        fall_animation,
+    ]);
     let graph_handle = graphs.add(graph);
     let animations = Animations {
         graph_handle,
@@ -68,34 +76,50 @@ fn play_animation_when_ready(
 }
 
 fn update_animation(
-    mut controllers: Query<&Velocity>,
+    mut controllers: Query<(Entity, &Velocity)>,
     mut animation_players: Query<(&mut AnimationPlayer, &mut AnimationTransitions)>,
     animations: Res<Animations>,
     mut current_animation: Local<usize>,
+    grounded: Query<&Grounded>,
 ) {
-    for velocity in &mut controllers {
+    for (entity, velocity) in &mut controllers {
         for (mut player, mut transition) in &mut animation_players {
             let velocity_squared = velocity.linvel.length_squared();
-            if velocity_squared <= 2.0 && *current_animation != 0 {
-                *current_animation = 0;
-                transition
-                    .play(
-                        &mut player,
-                        animations.indices[*current_animation],
-                        Duration::from_millis(250),
-                    )
-                    .repeat();
-            } else if velocity_squared > 2.0 && velocity_squared < 24.0 && *current_animation != 1 {
-                *current_animation = 1;
-                transition
-                    .play(
-                        &mut player,
-                        animations.indices[*current_animation],
-                        Duration::from_millis(250),
-                    )
-                    .repeat();
-            } else if velocity_squared >= 24.0 && *current_animation != 2 {
-                *current_animation = 2;
+            let is_grounded = grounded.get(entity).is_ok();
+            if is_grounded {
+                if velocity_squared <= 2.0 && *current_animation != 0 {
+                    *current_animation = 0;
+                    transition
+                        .play(
+                            &mut player,
+                            animations.indices[*current_animation],
+                            Duration::from_millis(250),
+                        )
+                        .repeat();
+                } else if velocity_squared > 2.0
+                    && velocity_squared < 24.0
+                    && *current_animation != 1
+                {
+                    *current_animation = 1;
+                    transition
+                        .play(
+                            &mut player,
+                            animations.indices[*current_animation],
+                            Duration::from_millis(250),
+                        )
+                        .repeat();
+                } else if velocity_squared >= 24.0 && *current_animation != 2 {
+                    *current_animation = 2;
+                    transition
+                        .play(
+                            &mut player,
+                            animations.indices[*current_animation],
+                            Duration::from_millis(250),
+                        )
+                        .repeat();
+                }
+            } else if *current_animation != 3 {
+                *current_animation = 3;
                 transition
                     .play(
                         &mut player,
