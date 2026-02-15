@@ -40,11 +40,7 @@ impl Plugin for CharacterControllerPlugin {
                 Update,
                 update_grounded.in_set(CharacterControllerSet::Grounded),
             )
-            .add_systems(Update, movement.in_set(CharacterControllerSet::Movement))
-            .add_systems(
-                Update,
-                apply_movement_damping.in_set(CharacterControllerSet::Damping),
-            );
+            .add_systems(Update, movement.in_set(CharacterControllerSet::Movement));
     }
 }
 
@@ -69,10 +65,6 @@ pub struct Grounded;
 /// The acceleration used for character movement.
 #[derive(Component)]
 pub struct MovementAcceleration(f32);
-
-/// The damping factor used for slowing down movement.
-#[derive(Component)]
-pub struct MovementDampingFactor(f32);
 
 /// The strength of a jump.
 #[derive(Component)]
@@ -101,21 +93,14 @@ pub struct CharacterControllerBundle {
 #[derive(Bundle)]
 pub struct MovementBundle {
     acceleration: MovementAcceleration,
-    damping: MovementDampingFactor,
     jump_impulse: JumpImpulse,
     max_slope_angle: MaxSlopeAngle,
 }
 
 impl MovementBundle {
-    pub const fn new(
-        acceleration: f32,
-        damping: f32,
-        jump_impulse: f32,
-        max_slope_angle: f32,
-    ) -> Self {
+    pub const fn new(acceleration: f32, jump_impulse: f32, max_slope_angle: f32) -> Self {
         Self {
             acceleration: MovementAcceleration(acceleration),
-            damping: MovementDampingFactor(damping),
             jump_impulse: JumpImpulse(jump_impulse),
             max_slope_angle: MaxSlopeAngle(max_slope_angle),
         }
@@ -124,7 +109,7 @@ impl MovementBundle {
 
 impl Default for MovementBundle {
     fn default() -> Self {
-        Self::new(30.0, 0.9, 7.0, std::f32::consts::PI * 0.45)
+        Self::new(30.0, 8.0, std::f32::consts::PI * 0.45)
     }
 }
 
@@ -144,11 +129,10 @@ impl CharacterControllerBundle {
     pub fn with_movement(
         mut self,
         acceleration: f32,
-        damping: f32,
         jump_impulse: f32,
         max_slope_angle: f32,
     ) -> Self {
-        self.movement = MovementBundle::new(acceleration, damping, jump_impulse, max_slope_angle);
+        self.movement = MovementBundle::new(acceleration, jump_impulse, max_slope_angle);
         self
     }
 }
@@ -312,15 +296,5 @@ fn movement(
                 }
             }
         }
-    }
-}
-
-/// Slows down movement in the XZ plane.
-fn apply_movement_damping(mut query: Query<(&MovementDampingFactor, &mut Velocity)>) {
-    for (damping_factor, mut velocity) in &mut query {
-        // We could use `Damping`, but we don't want to dampen movement along the Y axis.
-        velocity.linvel.x *= damping_factor.0;
-        velocity.linvel.z *= damping_factor.0;
-        velocity.angvel.y *= damping_factor.0;
     }
 }
