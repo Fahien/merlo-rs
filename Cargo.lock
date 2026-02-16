@@ -3465,7 +3465,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "merlo-rs"
+name = "merlo-presentation"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bevy-inspector-egui",
+ "bevy_egui",
+ "bevy_rapier3d",
+ "egui_dock",
+ "merlo-simulation",
+]
+
+[[package]]
+name = "merlo-simulation"
 version = "0.1.0"
 dependencies = [
  "bevy",

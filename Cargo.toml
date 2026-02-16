@@ -1,13 +1,8 @@
-[package]
-name = "merlo-rs"
-version = "0.1.0"
-authors = ["Antonio Caggiano <info@antoniocaggiano.eu>"]
-edition = "2024"
-description = "A 3D game prototype"
-readme = "README.md"
-license = "MIT"
+[workspace]
+members = [ "crates/*" ]
+resolver = "2"
 
-[dependencies]
+[workspace.dependencies]
 bevy = "0.17.3"
 bevy-inspector-egui = "0.35.0"
 bevy_egui = "0.38.1"
