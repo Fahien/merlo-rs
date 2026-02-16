@@ -1,0 +1,15 @@
+[package]
+name = "merlo-simulation"
+version = "0.1.0"
+authors = ["Antonio Caggiano <info@antoniocaggiano.eu>"]
+edition = "2024"
+description = "A 3D game prototype"
+readme = "README.md"
+license = "MIT"
+
+[dependencies]
+bevy = { workspace = true }
+bevy-inspector-egui = { workspace = true }
+bevy_egui = { workspace = true }
+bevy_rapier3d = { workspace = true }
+egui_dock = { workspace = true }

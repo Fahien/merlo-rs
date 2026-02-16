@@ -2,9 +2,10 @@
 // Author: Antonio Caggiano <info@antoniocaggiano.eu>
 // SPDX-License-Identifier: MIT
 
-mod presentation;
-mod simulation;
+mod animation;
+mod camera;
 
+use bevy::app::plugin_group;
 use bevy::prelude::*;
 use bevy_egui::{EguiContext, EguiPlugin, PrimaryEguiContext, egui};
 use bevy_inspector_egui::{
@@ -13,6 +14,16 @@ use bevy_inspector_egui::{
 };
 use bevy_rapier3d::prelude::*;
 use egui_dock::{DockArea, DockState, NodeIndex};
+
+use merlo_simulation as simulation;
+
+plugin_group! {
+    #[derive(Debug)]
+    pub struct PresentationPluginGroup {
+        camera:::CameraPlugin,
+        animation:::CharacterAnimationPlugin,
+    }
+}
 
 fn main() {
     App::new()
@@ -24,7 +35,7 @@ fn main() {
         .add_plugins(DefaultInspectorConfigPlugin)
         .add_systems(Startup, setup)
         .add_systems(EguiPrimaryContextPass, ui)
-        .add_plugins(presentation::PresentationPluginGroup)
+        .add_plugins(PresentationPluginGroup)
         .init_resource::<UiState>()
         .run();
 }
