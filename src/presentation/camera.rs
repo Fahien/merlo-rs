@@ -11,6 +11,7 @@ use bevy::{
     window::PrimaryWindow,
 };
 
+#[derive(Default)]
 pub struct CameraPlugin;
 
 impl Plugin for CameraPlugin {
