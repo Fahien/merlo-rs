@@ -2,9 +2,8 @@
 // Author: Antonio Caggiano <info@antoniocaggiano.eu>
 // SPDX-License-Identifier: MIT
 
-mod animation;
-mod camera;
-mod controller;
+mod presentation;
+mod simulation;
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContext, EguiPlugin, PrimaryEguiContext, egui};
@@ -20,13 +19,12 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
         .add_plugins(RapierDebugRenderPlugin::default())
-        .add_plugins(camera::CameraPlugin)
-        .add_plugins(controller::CharacterControllerPlugin)
+        .add_plugins(simulation::controller::CharacterControllerPlugin)
         .add_plugins(EguiPlugin::default())
         .add_plugins(DefaultInspectorConfigPlugin)
         .add_systems(Startup, setup)
         .add_systems(EguiPrimaryContextPass, ui)
-        .add_plugins(animation::CharacterAnimationPlugin)
+        .add_plugins(presentation::PresentationPluginGroup)
         .init_resource::<UiState>()
         .run();
 }
@@ -71,8 +69,11 @@ fn setup(
     commands
         .spawn((
             Transform::from_xyz(0.0, 1.5, 0.0),
-            controller::CharacterControllerBundle::new(Collider::capsule_y(1.0, 0.5), 2.0)
-                .with_movement(60.0, 8.0, 30.0_f32.to_radians()),
+            simulation::controller::CharacterControllerBundle::new(
+                Collider::capsule_y(1.0, 0.5),
+                2.0,
+            )
+            .with_movement(60.0, 8.0, 30.0_f32.to_radians()),
         ))
         .with_children(|commands| {
             commands.spawn((SceneRoot(scene), Transform::from_xyz(0.0, -1.5, 0.0)));

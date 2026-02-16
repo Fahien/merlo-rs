@@ -3,8 +3,9 @@ use std::time::Duration;
 use bevy::prelude::*;
 use bevy_rapier3d::prelude::*;
 
-use crate::controller::Grounded;
+use crate::simulation::controller::Grounded;
 
+#[derive(Default)]
 pub struct CharacterAnimationPlugin;
 
 impl Plugin for CharacterAnimationPlugin {
