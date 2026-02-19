@@ -14,3 +14,7 @@ bevy_egui = { workspace = true }
 bevy_rapier3d = { workspace = true }
 egui_dock = { workspace = true }
 merlo-simulation = { path = "../simulation" }
+bevy_replicon = { workspace = true }
+bevy_replicon_renet = { workspace = true }
+clap = { version = "4.5.59", features = ["derive"] }
+serde = { workspace = true }
