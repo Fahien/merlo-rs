@@ -1,9 +1,8 @@
 use std::time::Duration;
 
 use bevy::prelude::*;
-use bevy_rapier3d::prelude::*;
 
-use crate::simulation::controller::Grounded;
+use crate::simulation::controller::CharacterMovementState;
 
 #[derive(Default)]
 pub struct CharacterAnimationPlugin;
@@ -22,6 +21,17 @@ impl Plugin for CharacterAnimationPlugin {
 pub struct Animations {
     graph_handle: Handle<AnimationGraph>,
     indices: Vec<AnimationNodeIndex>,
+}
+
+#[derive(Component)]
+struct CurrentAnimation(CharacterAnimation);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CharacterAnimation {
+    Idle,
+    Walk,
+    Run,
+    Fall,
 }
 
 fn setup(
@@ -72,64 +82,65 @@ fn play_animation_when_ready(
         commands
             .entity(entity)
             .insert(AnimationGraphHandle(animations.graph_handle.clone()))
-            .insert(transitions);
+            .insert(transitions)
+            .insert(CurrentAnimation(CharacterAnimation::Idle));
     }
 }
 
 fn update_animation(
-    mut controllers: Query<(Entity, &Velocity)>,
-    mut animation_players: Query<(&mut AnimationPlayer, &mut AnimationTransitions)>,
+    movement_states: Query<&CharacterMovementState>,
+    parents: Query<&ChildOf>,
+    mut animation_players: Query<(
+        Entity,
+        &mut AnimationPlayer,
+        &mut AnimationTransitions,
+        &mut CurrentAnimation,
+    )>,
     animations: Res<Animations>,
-    mut current_animation: Local<usize>,
-    grounded: Query<&Grounded>,
 ) {
-    for (entity, velocity) in &mut controllers {
-        for (mut player, mut transition) in &mut animation_players {
-            let horizontal_velocity = velocity.linvel.xz();
-            let horizontal_velocity_squared = horizontal_velocity.length_squared();
-            let is_grounded = grounded.get(entity).is_ok();
-            if is_grounded {
-                if horizontal_velocity_squared <= 2.0 && *current_animation != 0 {
-                    *current_animation = 0;
-                    transition
-                        .play(
-                            &mut player,
-                            animations.indices[*current_animation],
-                            Duration::from_millis(250),
-                        )
-                        .repeat();
-                } else if horizontal_velocity_squared > 2.0
-                    && horizontal_velocity_squared < 24.0
-                    && *current_animation != 1
-                {
-                    *current_animation = 1;
-                    transition
-                        .play(
-                            &mut player,
-                            animations.indices[*current_animation],
-                            Duration::from_millis(250),
-                        )
-                        .repeat();
-                } else if horizontal_velocity_squared >= 24.0 && *current_animation != 2 {
-                    *current_animation = 2;
-                    transition
-                        .play(
-                            &mut player,
-                            animations.indices[*current_animation],
-                            Duration::from_millis(250),
-                        )
-                        .repeat();
-                }
-            } else if *current_animation != 3 {
-                *current_animation = 3;
-                transition
-                    .play(
-                        &mut player,
-                        animations.indices[*current_animation],
-                        Duration::from_millis(250),
-                    )
-                    .repeat();
-            }
+    for (entity, mut player, mut transition, mut current_animation) in &mut animation_players {
+        let Some(movement_state) = find_movement_state(entity, &parents, &movement_states) else {
+            continue;
+        };
+
+        let next_animation = if !movement_state.grounded {
+            CharacterAnimation::Fall
+        } else if !movement_state.is_moving() {
+            CharacterAnimation::Idle
+        } else if movement_state.is_running() {
+            CharacterAnimation::Run
+        } else {
+            CharacterAnimation::Walk
+        };
+
+        if current_animation.0 == next_animation {
+            continue;
         }
+
+        current_animation.0 = next_animation;
+        transition
+            .play(
+                &mut player,
+                animations.indices[current_animation.0 as usize],
+                Duration::from_millis(250),
+            )
+            .repeat();
+    }
+}
+
+fn find_movement_state(
+    mut entity: Entity,
+    parents: &Query<&ChildOf>,
+    movement_states: &Query<&CharacterMovementState>,
+) -> Option<CharacterMovementState> {
+    loop {
+        if let Ok(state) = movement_states.get(entity) {
+            return Some(*state);
+        }
+
+        let Ok(parent) = parents.get(entity) else {
+            return None;
+        };
+        entity = parent.parent();
     }
 }
