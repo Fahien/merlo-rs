@@ -48,6 +48,7 @@ fn main() {
         .add_systems(OnEnter(ClientState::Connecting), display_connection_message)
         .add_systems(OnExit(ClientState::Connected), show_disconnected_message)
         .replicate::<Transform>()
+        .replicate::<Velocity>()
         .replicate::<Player>()
         .replicate::<Doodad>()
         .add_observer(init_player_mesh)
