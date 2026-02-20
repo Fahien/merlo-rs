@@ -85,10 +85,11 @@ fn update_animation(
 ) {
     for (entity, velocity) in &mut controllers {
         for (mut player, mut transition) in &mut animation_players {
-            let velocity_squared = velocity.linvel.length_squared();
+            let horizontal_velocity = velocity.linvel.xz();
+            let horizontal_velocity_squared = horizontal_velocity.length_squared();
             let is_grounded = grounded.get(entity).is_ok();
             if is_grounded {
-                if velocity_squared <= 2.0 && *current_animation != 0 {
+                if horizontal_velocity_squared <= 2.0 && *current_animation != 0 {
                     *current_animation = 0;
                     transition
                         .play(
@@ -97,8 +98,8 @@ fn update_animation(
                             Duration::from_millis(250),
                         )
                         .repeat();
-                } else if velocity_squared > 2.0
-                    && velocity_squared < 24.0
+                } else if horizontal_velocity_squared > 2.0
+                    && horizontal_velocity_squared < 24.0
                     && *current_animation != 1
                 {
                     *current_animation = 1;
@@ -109,7 +110,7 @@ fn update_animation(
                             Duration::from_millis(250),
                         )
                         .repeat();
-                } else if velocity_squared >= 24.0 && *current_animation != 2 {
+                } else if horizontal_velocity_squared >= 24.0 && *current_animation != 2 {
                     *current_animation = 2;
                     transition
                         .play(

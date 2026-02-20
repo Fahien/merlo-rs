@@ -1280,6 +1280,7 @@ dependencies = [
  "log",
  "nalgebra",
  "rapier3d",
+ "serde",
 ]
 
 [[package]]
@@ -1790,6 +1791,9 @@ name = "bit-vec"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5e764a1d40d510daf35e07be9eb06e75770908c27d411ee6c92109c9840eaaf7"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "bitflags"
@@ -3876,6 +3880,7 @@ dependencies = [
  "num-complex",
  "num-rational",
  "num-traits",
+ "serde",
  "simba",
  "typenum",
 ]
@@ -4022,6 +4027,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73f88a1307638156682bada9d7604135552957b7818057dcef22705b4d509495"
 dependencies = [
  "num-traits",
+ "serde",
 ]
 
 [[package]]
@@ -4540,6 +4546,8 @@ dependencies = [
  "num-traits",
  "ordered-float 5.1.0",
  "rstar",
+ "serde",
+ "serde_arrays",
  "simba",
  "slab",
  "smallvec",
@@ -4903,6 +4911,7 @@ dependencies = [
  "parry3d",
  "profiling",
  "rustc-hash 2.1.1",
+ "serde",
  "simba",
  "static_assertions",
  "thiserror 2.0.18",
@@ -5230,6 +5239,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_arrays"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94a16b99c5ea4fe3daccd14853ad260ec00ea043b2708d1fd1da3106dcd8d9df"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "serde_core"
 version = "1.0.228"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5379,6 +5397,7 @@ dependencies = [
  "hashbrown 0.15.5",
  "num-traits",
  "robust",
+ "serde",
  "smallvec",
 ]
 
