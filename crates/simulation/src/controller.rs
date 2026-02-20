@@ -8,6 +8,8 @@ use bevy::{
     prelude::*,
 };
 use bevy_rapier3d::prelude::*;
+use bevy_replicon::prelude::*;
+use serde::{Deserialize, Serialize};
 
 pub struct CharacterControllerPlugin;
 
@@ -21,7 +23,9 @@ enum CharacterControllerSet {
 
 impl Plugin for CharacterControllerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_message::<MovementAction>()
+        // Inputs are produced as client messages: on a connected client they are sent over the
+        // network, and on server/single-player they are emitted locally as `FromClient`.
+        app.add_client_message::<MovementAction>(Channel::Unordered)
             .configure_sets(
                 Update,
                 (
@@ -40,12 +44,26 @@ impl Plugin for CharacterControllerPlugin {
                 Update,
                 update_grounded.in_set(CharacterControllerSet::Grounded),
             )
-            .add_systems(Update, movement.in_set(CharacterControllerSet::Movement));
+            .add_systems(
+                Update,
+                movement
+                    .in_set(CharacterControllerSet::Movement)
+                    .run_if(has_server_authority),
+            );
     }
 }
 
+/// Returns whether this process should run authoritative simulation.
+///
+/// In Replicon, `ClientState::Disconnected` means "this app is not acting as a network client",
+/// which includes dedicated server and single-player. Connected remote clients are in
+/// `Connecting`/`Connected`, so they should not apply movement locally and must only send input.
+fn has_server_authority(client_state: Res<State<ClientState>>) -> bool {
+    *client_state == ClientState::Disconnected
+}
+
 /// A [`Message`] written for a movement input action.
-#[derive(Message)]
+#[derive(Message, Serialize, Deserialize)]
 pub enum MovementAction {
     Move(Vec2),
     Walk(Vec2),
@@ -256,9 +274,12 @@ struct MovementData {
     grounded: Has<Grounded>,
 }
 
-/// Responds to [`MovementAction`] events and moves character controllers accordingly.
+/// Applies movement from client input messages.
+///
+/// This runs only when [`has_server_authority`] is true, so movement is applied on server and
+/// single-player, while connected clients only send input.
 fn movement(
-    mut movement_reader: MessageReader<MovementAction>,
+    mut movement_reader: MessageReader<FromClient<MovementAction>>,
     mut controllers: Query<MovementData>,
 ) {
     for mut data in &mut controllers {
@@ -269,7 +290,7 @@ fn movement(
         data.velocity.angvel.y = 0.0;
 
         for event in movement_reader.read() {
-            match event {
+            match &event.message {
                 MovementAction::Move(direction) => {
                     let local = Vec3::new(-direction.x, 0.0, direction.y);
                     let mut world = data.transform.rotation * local;
