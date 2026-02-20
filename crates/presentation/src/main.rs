@@ -48,7 +48,9 @@ fn main() {
         .add_systems(OnEnter(ClientState::Connecting), display_connection_message)
         .add_systems(OnExit(ClientState::Connected), show_disconnected_message)
         .replicate::<Transform>()
+        // Replicate velocity component to stabilize character movement across the network.
         .replicate::<Velocity>()
+        .replicate::<simulation::controller::CharacterMovementState>()
         .replicate::<Player>()
         .replicate::<Doodad>()
         .add_observer(init_player_mesh)
