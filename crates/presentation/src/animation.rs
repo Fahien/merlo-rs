@@ -34,6 +34,7 @@ struct CurrentAnimation(CharacterAnimation);
 enum CharacterAnimation {
     Idle,
     Walk,
+    WalkBack,
     Run,
     Fall,
 }
@@ -50,12 +51,15 @@ fn setup(
         .load(GltfAssetLabel::Animation(0).from_asset(format!("{character_prefix}-idle.glb")));
     let walk_animation = asset_server
         .load(GltfAssetLabel::Animation(0).from_asset(format!("{character_prefix}-walk.glb")));
+    let walk_back_animation = asset_server
+        .load(GltfAssetLabel::Animation(0).from_asset(format!("{character_prefix}-walk-back.glb")));
     let fall_animation = asset_server
         .load(GltfAssetLabel::Animation(0).from_asset(format!("{character_prefix}-fall.glb")));
 
     let (graph, indices) = AnimationGraph::from_clips([
         idle_animation,
         walk_animation,
+        walk_back_animation,
         running_animation,
         fall_animation,
     ]);
@@ -111,6 +115,8 @@ fn update_animation(
             CharacterAnimation::Fall
         } else if !movement_state.is_moving() {
             CharacterAnimation::Idle
+        } else if movement_state.is_moving_backwards() {
+            CharacterAnimation::WalkBack
         } else if movement_state.is_running() {
             CharacterAnimation::Run
         } else {

@@ -116,6 +116,10 @@ impl CharacterMovementState {
         self.direction != Vec3::ZERO
     }
 
+    pub fn is_moving_backwards(self) -> bool {
+        self.direction.z < 0.0
+    }
+
     pub fn is_running(self) -> bool {
         self.speed >= 0.15
     }
@@ -417,9 +421,16 @@ fn movement(
         let mut world = data.transform.rotation * direction;
         world = world.normalize_or_zero();
 
-        data.velocity.linvel.x = world.x * data.movement_acceleration.0 * data.movement_state.speed;
+        // If moving backwards, reduce speed to walk instead of run, to make it feel better.
+        let speed = if data.movement_state.is_moving_backwards() {
+            0.05
+        } else {
+            data.movement_state.speed
+        };
+
+        data.velocity.linvel.x = world.x * data.movement_acceleration.0 * speed;
         // If not flying, do not apply vertical movement from input, to allow gravity and jumping to work naturally.
-        data.velocity.linvel.z = world.z * data.movement_acceleration.0 * data.movement_state.speed;
+        data.velocity.linvel.z = world.z * data.movement_acceleration.0 * speed;
 
         if set_rotation == 0.0 {
             data.movement_state.apply_right_left_rotation();
