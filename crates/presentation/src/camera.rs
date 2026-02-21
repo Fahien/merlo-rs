@@ -10,6 +10,7 @@ use bevy::{
     transform::TransformSystems,
     window::PrimaryWindow,
 };
+use merlo_simulation::controller::CharacterController;
 
 #[derive(Default)]
 pub struct CameraPlugin;
@@ -46,20 +47,23 @@ impl Mesh3dClicked {
 fn mesh3d_clicked(
     mut mesh_clicked: MessageReader<Mesh3dClicked>,
     mut commands: Commands,
-    controller: Single<(Entity, &ChildOf), With<Controller>>,
+    controller: Single<(Entity, &ChildOf), With<CharacterController>>,
+    parents: Query<&ChildOf>,
 ) {
     for msg in mesh_clicked.read() {
-        if msg.entity() == controller.1.parent() {
+        let current_parent = controller.1.parent();
+        let mesh_root = parents.root_ancestor(msg.entity());
+        if mesh_root == current_parent {
             continue;
         }
-        move_controller(&mut commands, msg.entity(), &controller);
+        move_controller(&mut commands, mesh_root, &controller);
     }
 }
 
 fn move_controller(
     commands: &mut Commands,
     next: Entity,
-    controller: &Single<(Entity, &ChildOf), With<Controller>>,
+    controller: &Single<(Entity, &ChildOf), With<CharacterController>>,
 ) {
     // Remove parent from the controller
     commands.entity(controller.0).remove::<ChildOf>();
@@ -67,11 +71,6 @@ fn move_controller(
     // Set the new parent to the clicked entity
     commands.entity(controller.0).insert(ChildOf(next));
 }
-
-/// Controller component for moving an entity.
-/// The controller follows the controlled entity.
-#[derive(Component)]
-pub struct Controller;
 
 /// Spawns a dummy entity to be controlled, with a camera pivot and a camera as child.
 pub fn setup(mut commands: Commands) {
@@ -86,7 +85,7 @@ pub fn setup(mut commands: Commands) {
 pub fn spawn<R: Relationship>(parent: &mut RelatedSpawnerCommands<R>) {
     parent
         .spawn((
-            Controller,
+            CharacterController,
             Transform::from_xyz(0.0, 3.0, 0.0),
             InheritedVisibility::default(),
         ))

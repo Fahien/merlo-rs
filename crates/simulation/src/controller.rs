@@ -2,7 +2,11 @@
 // Author: Antonio Caggiano <info@antoniocaggiano.eu>
 // SPDX-License-Identifier: MIT
 
-use bevy::{ecs::query::QueryData, input::mouse::MouseMotion, prelude::*};
+use bevy::{
+    ecs::{entity::MapEntities, query::QueryData},
+    input::mouse::MouseMotion,
+    prelude::*,
+};
 use bevy_rapier3d::prelude::*;
 use bevy_replicon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -21,7 +25,7 @@ impl Plugin for CharacterControllerPlugin {
     fn build(&self, app: &mut App) {
         // Inputs are produced as client messages: on a connected client they are sent over the
         // network, and on server/single-player they are emitted locally as `FromClient`.
-        app.add_client_message::<MovementAction>(Channel::Ordered)
+        app.add_mapped_client_message::<MovementAction>(Channel::Ordered)
             .configure_sets(
                 Update,
                 (
@@ -59,15 +63,15 @@ fn has_server_authority(client_state: Res<State<ClientState>>) -> bool {
 }
 
 /// A [`Message`] written for a movement input action.
-#[derive(Message, Serialize, Deserialize)]
+#[derive(Message, MapEntities, Serialize, Deserialize, Clone, Copy)]
 pub enum MovementAction {
-    AddMove(Vec3),
-    SetMove(Vec3),
-    SetSpeed(f32),
-    RotateRight(bool),
-    RotateLeft(bool),
-    SetRotate(f32),
-    SetJump(bool),
+    AddMove(#[entities] Entity, Vec3),
+    SetMove(#[entities] Entity, Vec3),
+    SetSpeed(#[entities] Entity, f32),
+    RotateRight(#[entities] Entity, bool),
+    RotateLeft(#[entities] Entity, bool),
+    SetRotate(#[entities] Entity, f32),
+    SetJump(#[entities] Entity, bool),
 }
 
 /// Replicated movement state used by clients for animation and presentation.
@@ -126,8 +130,13 @@ impl CharacterMovementState {
 }
 
 /// A marker component indicating that an entity is using a character controller.
+/// This is children of the entity being controlled, which has the physics and movement components.
 #[derive(Component)]
 pub struct CharacterController;
+
+/// A marker component indicating that an entity is using a character physics.
+#[derive(Component)]
+pub struct CharacterPhysics;
 
 /// A marker component indicating that an entity is on the ground.
 #[derive(Component)]
@@ -151,8 +160,8 @@ pub struct MaxSlopeAngle(f32);
 /// A bundle that contains the components needed for a basic
 /// physics-driven character controller.
 #[derive(Bundle)]
-pub struct CharacterControllerBundle {
-    character_controller: CharacterController,
+pub struct CharacterPhysicsBundle {
+    physics: CharacterPhysics,
     collider: Collider,
     body: RigidBody,
     velocity: Velocity,
@@ -160,6 +169,7 @@ pub struct CharacterControllerBundle {
     gravity_scale: GravityScale,
     movement_state: CharacterMovementState,
     movement: MovementBundle,
+    rotation: CharacterRotation,
 }
 
 /// A bundle that contains components for character movement.
@@ -186,10 +196,10 @@ impl Default for MovementBundle {
     }
 }
 
-impl CharacterControllerBundle {
+impl CharacterPhysicsBundle {
     pub fn new(collider: Collider, gravity_scale: f32) -> Self {
         Self {
-            character_controller: CharacterController,
+            physics: CharacterPhysics,
             collider,
             body: RigidBody::Dynamic,
             velocity: Velocity::default(),
@@ -197,6 +207,7 @@ impl CharacterControllerBundle {
             gravity_scale: GravityScale(gravity_scale),
             movement_state: CharacterMovementState::default(),
             movement: MovementBundle::default(),
+            rotation: CharacterRotation::default(),
         }
     }
 
@@ -211,92 +222,118 @@ impl CharacterControllerBundle {
     }
 }
 
+/// Returns the currently controlled physics entity, if any.
+fn controlled_character_entity(
+    child: &Query<&ChildOf, With<CharacterController>>,
+    has_physics: &Query<Has<CharacterPhysics>>,
+) -> Option<Entity> {
+    let child = child.single().ok()?;
+    let entity = child.parent();
+    let has_physics = has_physics.get(entity).ok()?;
+    has_physics.then_some(entity)
+}
+
 /// Sends [`MovementAction`] events based on keyboard input.
 fn keyboard_input(
     mut movement_writer: MessageWriter<MovementAction>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
+    child: Query<&ChildOf, With<CharacterController>>,
+    has_physics: Query<Has<CharacterPhysics>>,
 ) {
+    let Some(entity) = controlled_character_entity(&child, &has_physics) else {
+        return; // No character controller with physics in the scene - do nothing.
+    };
+
     let move_forward = keyboard_input.any_just_pressed([KeyCode::KeyW, KeyCode::ArrowUp]);
     if move_forward {
-        movement_writer.write(MovementAction::AddMove(Vec3::new(0.0, 0.0, 1.0)));
+        movement_writer.write(MovementAction::AddMove(entity, Vec3::new(0.0, 0.0, 1.0)));
     }
     let move_backward = keyboard_input.any_just_pressed([KeyCode::KeyS, KeyCode::ArrowDown]);
     if move_backward {
-        movement_writer.write(MovementAction::AddMove(Vec3::new(0.0, 0.0, -1.0)));
+        movement_writer.write(MovementAction::AddMove(entity, Vec3::new(0.0, 0.0, -1.0)));
     }
     let move_left = keyboard_input.just_pressed(KeyCode::KeyQ);
     if move_left {
-        movement_writer.write(MovementAction::AddMove(Vec3::new(1.0, 0.0, 0.0)));
+        movement_writer.write(MovementAction::AddMove(entity, Vec3::new(1.0, 0.0, 0.0)));
     }
     let move_right = keyboard_input.just_pressed(KeyCode::KeyE);
     if move_right {
-        movement_writer.write(MovementAction::AddMove(Vec3::new(-1.0, 0.0, 0.0)));
+        movement_writer.write(MovementAction::AddMove(entity, Vec3::new(-1.0, 0.0, 0.0)));
     }
     let shift = keyboard_input.just_pressed(KeyCode::ShiftLeft);
     if shift {
-        movement_writer.write(MovementAction::SetSpeed(0.05));
+        movement_writer.write(MovementAction::SetSpeed(entity, 0.05));
     }
     let rotate_left = keyboard_input.any_just_pressed([KeyCode::KeyA, KeyCode::ArrowLeft]);
     if rotate_left {
-        movement_writer.write(MovementAction::RotateLeft(true));
+        movement_writer.write(MovementAction::RotateLeft(entity, true));
     }
     let rotate_right = keyboard_input.any_just_pressed([KeyCode::KeyD, KeyCode::ArrowRight]);
     if rotate_right {
-        movement_writer.write(MovementAction::RotateRight(true));
+        movement_writer.write(MovementAction::RotateRight(entity, true));
     }
     if keyboard_input.just_pressed(KeyCode::Space) {
-        movement_writer.write(MovementAction::SetJump(true));
+        movement_writer.write(MovementAction::SetJump(entity, true));
     }
 
     // Invert commands
     let move_forward = keyboard_input.any_just_released([KeyCode::KeyW, KeyCode::ArrowUp]);
     if move_forward {
-        movement_writer.write(MovementAction::AddMove(Vec3::new(0.0, 0.0, -1.0)));
+        movement_writer.write(MovementAction::AddMove(entity, Vec3::new(0.0, 0.0, -1.0)));
     }
     let move_backward = keyboard_input.any_just_released([KeyCode::KeyS, KeyCode::ArrowDown]);
     if move_backward {
-        movement_writer.write(MovementAction::AddMove(Vec3::new(0.0, 0.0, 1.0)));
+        movement_writer.write(MovementAction::AddMove(entity, Vec3::new(0.0, 0.0, 1.0)));
     }
     let move_left = keyboard_input.just_released(KeyCode::KeyQ);
     if move_left {
-        movement_writer.write(MovementAction::AddMove(Vec3::new(-1.0, 0.0, 0.0)));
+        movement_writer.write(MovementAction::AddMove(entity, Vec3::new(-1.0, 0.0, 0.0)));
     }
     let move_right = keyboard_input.just_released(KeyCode::KeyE);
     if move_right {
-        movement_writer.write(MovementAction::AddMove(Vec3::new(1.0, 0.0, 0.0)));
+        movement_writer.write(MovementAction::AddMove(entity, Vec3::new(1.0, 0.0, 0.0)));
     }
     let shift = keyboard_input.just_released(KeyCode::ShiftLeft);
     if shift {
-        movement_writer.write(MovementAction::SetSpeed(0.15));
+        movement_writer.write(MovementAction::SetSpeed(entity, 0.15));
     }
     let rotate_left = keyboard_input.any_just_released([KeyCode::KeyA, KeyCode::ArrowLeft]);
     if rotate_left {
-        movement_writer.write(MovementAction::RotateLeft(false));
+        movement_writer.write(MovementAction::RotateLeft(entity, false));
     }
     let rotate_right = keyboard_input.any_just_released([KeyCode::KeyD, KeyCode::ArrowRight]);
     if rotate_right {
-        movement_writer.write(MovementAction::RotateRight(false));
+        movement_writer.write(MovementAction::RotateRight(entity, false));
     }
     if keyboard_input.just_released(KeyCode::Space) {
-        movement_writer.write(MovementAction::SetJump(false));
+        movement_writer.write(MovementAction::SetJump(entity, false));
     }
 }
 
 /// Sends [`MovementAction`] events based on gamepad input.
-fn gamepad_input(mut movement_writer: MessageWriter<MovementAction>, gamepads: Query<&Gamepad>) {
+fn gamepad_input(
+    mut movement_writer: MessageWriter<MovementAction>,
+    gamepads: Query<&Gamepad>,
+    child: Query<&ChildOf, With<CharacterController>>,
+    has_physics: Query<Has<CharacterPhysics>>,
+) {
+    let Some(entity) = controlled_character_entity(&child, &has_physics) else {
+        return;
+    };
+
     for gamepad in gamepads.iter() {
         if let (Some(x), Some(y)) = (
             gamepad.get(GamepadAxis::LeftStickX),
             gamepad.get(GamepadAxis::LeftStickY),
         ) {
-            movement_writer.write(MovementAction::SetMove(Vec3::new(x, 0.0, y)));
+            movement_writer.write(MovementAction::SetMove(entity, Vec3::new(x, 0.0, y)));
         }
 
         if gamepad.just_pressed(GamepadButton::South) {
-            movement_writer.write(MovementAction::SetJump(true));
+            movement_writer.write(MovementAction::SetJump(entity, true));
         }
         if gamepad.just_released(GamepadButton::South) {
-            movement_writer.write(MovementAction::SetJump(false));
+            movement_writer.write(MovementAction::SetJump(entity, false));
         }
     }
 }
@@ -305,10 +342,16 @@ fn mouse_input(
     mut movement_writer: MessageWriter<MovementAction>,
     mut mouse_reader: MessageReader<MouseMotion>,
     mouse_buttons: Res<ButtonInput<MouseButton>>,
+    child: Query<&ChildOf, With<CharacterController>>,
+    has_physics: Query<Has<CharacterPhysics>>,
 ) {
+    let Some(entity) = controlled_character_entity(&child, &has_physics) else {
+        return;
+    };
+
     // Hold RMB to look around
     if mouse_buttons.just_released(MouseButton::Right) {
-        movement_writer.write(MovementAction::SetRotate(0.0));
+        movement_writer.write(MovementAction::SetRotate(entity, 0.0));
         return;
     }
 
@@ -322,17 +365,17 @@ fn mouse_input(
         delta += ev.delta;
     }
     if delta.x == 0.0 {
-        movement_writer.write(MovementAction::SetRotate(0.0));
+        movement_writer.write(MovementAction::SetRotate(entity, 0.0));
     }
 
     let sensitivity = 0.125;
-    movement_writer.write(MovementAction::SetRotate(-delta.x * sensitivity));
+    movement_writer.write(MovementAction::SetRotate(entity, -delta.x * sensitivity));
 }
 
 /// Updates the [`Grounded`] status for character controllers.
 fn update_grounded(
     rapier_context: ReadRapierContext,
-    query: Query<(Entity, &Transform, Option<&MaxSlopeAngle>), With<CharacterController>>,
+    query: Query<(Entity, &Transform, Option<&MaxSlopeAngle>), With<CharacterPhysics>>,
     mut movement_states: Query<&mut CharacterMovementState>,
 ) {
     let Ok(rapier_context) = rapier_context.single() else {
@@ -361,6 +404,15 @@ fn update_grounded(
     }
 }
 
+/// Peculiar helper class for the character rotation.
+/// E.g. when using mouse right button to rotate, we want to apply
+/// the rotation immediately and not have it be affected by the
+/// smoothing applied in `CharacterMovementState` for keyboard rotation.
+#[derive(Component, Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Default)]
+struct CharacterRotation {
+    rotation: f32,
+}
+
 #[derive(QueryData)]
 #[query_data(mutable)]
 struct MovementData {
@@ -369,6 +421,7 @@ struct MovementData {
     jump_impulse: &'static JumpImpulse,
     movement_state: &'static mut CharacterMovementState,
     velocity: &'static mut Velocity,
+    rotation: &'static mut CharacterRotation,
 }
 
 /// Applies movement from client input messages.
@@ -379,44 +432,67 @@ fn movement(
     mut movement_reader: MessageReader<FromClient<MovementAction>>,
     mut controllers: Query<MovementData>,
 ) {
+    // Reset horizontal movement and rotation.
+    // This allows us to have discrete movement input each frame,
+    // which is easier to work with and feels better than continuous acceleration.
     for mut data in &mut controllers {
-        // Reset horizontal movement and rotation.
-        // This allows us to have discrete movement input each frame,
-        // which is easier to work with and feels better than continuous acceleration.
         data.velocity.linvel.x = 0.0;
         data.velocity.linvel.z = 0.0;
         data.velocity.angvel.y = 0.0;
 
-        let mut set_rotation = 0.0;
+        data.rotation.rotation = 0.0;
+    }
 
-        // First collect all inputs for this frame.
-        for event in movement_reader.read() {
-            match &event.message {
-                MovementAction::AddMove(direction) => {
-                    data.movement_state.add_direction(*direction);
-                }
-                MovementAction::SetMove(direction) => {
-                    data.movement_state.direction = *direction;
-                }
-                MovementAction::SetSpeed(speed) => {
-                    data.movement_state.speed = *speed;
-                }
-                MovementAction::RotateRight(rotation) => {
-                    data.movement_state.rotating_right = *rotation;
-                }
-                MovementAction::RotateLeft(rotation) => {
-                    data.movement_state.rotating_left = *rotation;
-                }
-                MovementAction::SetRotate(rotation) => {
-                    set_rotation = *rotation;
-                }
-                MovementAction::SetJump(jumping) => {
-                    data.movement_state.jumping = *jumping;
-                }
+    // Collect all inputs for this frame.
+    for event in movement_reader.read() {
+        match &event.message {
+            MovementAction::AddMove(entity, direction) => {
+                let Ok(mut data) = controllers.get_mut(*entity) else {
+                    continue;
+                };
+                data.movement_state.add_direction(*direction);
+            }
+            MovementAction::SetMove(entity, direction) => {
+                let Ok(mut data) = controllers.get_mut(*entity) else {
+                    continue;
+                };
+                data.movement_state.direction = *direction;
+            }
+            MovementAction::SetSpeed(entity, speed) => {
+                let Ok(mut data) = controllers.get_mut(*entity) else {
+                    continue;
+                };
+                data.movement_state.speed = *speed;
+            }
+            MovementAction::RotateRight(entity, rotation) => {
+                let Ok(mut data) = controllers.get_mut(*entity) else {
+                    continue;
+                };
+                data.movement_state.rotating_right = *rotation;
+            }
+            MovementAction::RotateLeft(entity, rotation) => {
+                let Ok(mut data) = controllers.get_mut(*entity) else {
+                    continue;
+                };
+                data.movement_state.rotating_left = *rotation;
+            }
+            MovementAction::SetRotate(entity, rotation) => {
+                let Ok(mut data) = controllers.get_mut(*entity) else {
+                    continue;
+                };
+                data.rotation.rotation = *rotation;
+            }
+            MovementAction::SetJump(entity, jumping) => {
+                let Ok(mut data) = controllers.get_mut(*entity) else {
+                    continue;
+                };
+                data.movement_state.jumping = *jumping;
             }
         }
+    }
 
-        // Then apply movement based on the final state.
+    // Then apply movement based on the final state.
+    for mut data in &mut controllers {
         let direction = data.movement_state.direction.clamp_length_max(1.0);
         let mut world = data.transform.rotation * direction;
         world = world.normalize_or_zero();
@@ -432,10 +508,10 @@ fn movement(
         // If not flying, do not apply vertical movement from input, to allow gravity and jumping to work naturally.
         data.velocity.linvel.z = world.z * data.movement_acceleration.0 * speed;
 
-        if set_rotation == 0.0 {
+        if data.rotation.rotation == 0.0 {
             data.movement_state.apply_right_left_rotation();
         } else {
-            data.movement_state.rotating = set_rotation;
+            data.movement_state.rotating = data.rotation.rotation;
         }
         data.velocity.angvel.y = data.movement_state.rotating * 4.0;
 

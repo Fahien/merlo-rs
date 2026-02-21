@@ -6,8 +6,8 @@ mod animation;
 mod camera;
 mod network;
 
-use bevy::app::plugin_group;
 use bevy::prelude::*;
+use bevy::{app::plugin_group, asset::uuid::Uuid};
 use bevy_egui::{EguiContext, EguiPlugin, PrimaryEguiContext, egui};
 use bevy_inspector_egui::{
     DefaultInspectorConfigPlugin, bevy_egui::EguiPrimaryContextPass,
@@ -71,11 +71,8 @@ fn init_player_mesh(add: On<Add, Player>, mut commands: Commands, asset_server: 
     commands
         .entity(add.entity)
         .insert(
-            simulation::controller::CharacterControllerBundle::new(
-                Collider::capsule_y(1.0, 0.5),
-                2.0,
-            )
-            .with_movement(60.0, 8.0, 30.0_f32.to_radians()),
+            simulation::controller::CharacterPhysicsBundle::new(Collider::capsule_y(1.0, 0.5), 2.0)
+                .with_movement(60.0, 8.0, 30.0_f32.to_radians()),
         )
         .with_children(|commands| {
             commands.spawn((SceneRoot(scene), Transform::from_xyz(0.0, -1.5, 0.0)));
@@ -100,7 +97,16 @@ fn init_doodad_mesh(
 const CHARACTER_PATH: &str = "character-large-male.glb";
 
 #[derive(Component, Serialize, Deserialize)]
-struct Player;
+struct Player(u128);
+
+impl Default for Player {
+    fn default() -> Self {
+        // Create a UUID for the player.
+        let player_id = Uuid::new_v4().as_u128();
+        Player(player_id)
+    }
+}
+
 #[derive(Component, Serialize, Deserialize)]
 struct Doodad;
 
@@ -137,7 +143,16 @@ fn setup(
 }
 
 fn spawn_server_entities(commands: &mut Commands) {
-    commands.spawn((Replicated, Transform::from_xyz(0.0, 1.5, 0.0), Player));
+    commands.spawn((
+        Replicated,
+        Transform::from_xyz(0.0, 1.5, 2.0),
+        Player::default(),
+    ));
+    commands.spawn((
+        Replicated,
+        Transform::from_xyz(0.0, 1.5, 0.0),
+        Player::default(),
+    ));
     commands.spawn((Replicated, Transform::from_xyz(0.0, 1.0, 0.0), Doodad));
     commands.spawn((Replicated, Transform::from_xyz(1.0, 0.5, 0.0), Doodad));
 }
