@@ -1,5 +1,5 @@
 [package]
-name = "merlo-presentation"
+name = "merlo-model"
 version = "0.1.0"
 authors = ["Antonio Caggiano <info@antoniocaggiano.eu>"]
 edition = "2024"
@@ -13,6 +13,6 @@ bevy-inspector-egui = { workspace = true }
 bevy_egui = { workspace = true }
 bevy_rapier3d = { workspace = true }
 egui_dock = { workspace = true }
-merlo-simulation = { path = "../simulation" }
-merlo-model = { path = "../model" }
+bevy_replicon = { workspace = true }
+bevy_replicon_renet = { workspace = true }
 serde = { workspace = true }

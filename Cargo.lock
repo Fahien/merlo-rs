@@ -3738,7 +3738,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "merlo-presentation"
+name = "merlo-model"
 version = "0.1.0"
 dependencies = [
  "bevy",
@@ -3747,8 +3747,20 @@ dependencies = [
  "bevy_rapier3d",
  "bevy_replicon",
  "bevy_replicon_renet",
- "clap",
  "egui_dock",
+ "serde",
+]
+
+[[package]]
+name = "merlo-presentation"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bevy-inspector-egui",
+ "bevy_egui",
+ "bevy_rapier3d",
+ "egui_dock",
+ "merlo-model",
  "merlo-simulation",
  "serde",
 ]
@@ -3763,7 +3775,9 @@ dependencies = [
  "bevy_rapier3d",
  "bevy_replicon",
  "bevy_replicon_renet",
+ "clap",
  "egui_dock",
+ "merlo-model",
  "serde",
 ]
 

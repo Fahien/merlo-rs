@@ -4,23 +4,18 @@
 
 mod animation;
 mod camera;
-mod network;
 
+use bevy::app::plugin_group;
 use bevy::prelude::*;
-use bevy::{app::plugin_group, asset::uuid::Uuid};
 use bevy_egui::{EguiContext, EguiPlugin, PrimaryEguiContext, egui};
 use bevy_inspector_egui::{
     DefaultInspectorConfigPlugin, bevy_egui::EguiPrimaryContextPass,
     bevy_inspector::ui_for_entities,
 };
 use bevy_rapier3d::prelude::*;
-use bevy_replicon::prelude::*;
-use bevy_replicon_renet::RepliconRenetPlugins;
 use egui_dock::{DockArea, DockState, NodeIndex};
-use serde::{Deserialize, Serialize};
 
 use merlo_simulation as simulation;
-use network::{Cli, NetworkMode};
 
 plugin_group! {
     #[derive(Debug)]
@@ -32,10 +27,8 @@ plugin_group! {
 
 fn main() {
     App::new()
-        .init_resource::<Cli>()
         .add_plugins(DefaultPlugins)
-        .add_plugins(RepliconPlugins)
-        .add_plugins(RepliconRenetPlugins)
+        .add_plugins(simulation::SimulationPlugin)
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
         .add_plugins(RapierDebugRenderPlugin::default())
         .add_plugins(simulation::controller::CharacterControllerPlugin)
@@ -45,78 +38,14 @@ fn main() {
         .add_systems(EguiPrimaryContextPass, ui)
         .add_plugins(PresentationPluginGroup)
         .init_resource::<UiState>()
-        .add_systems(OnEnter(ClientState::Connecting), display_connection_message)
-        .add_systems(OnExit(ClientState::Connected), show_disconnected_message)
-        .replicate::<Transform>()
-        // Replicate velocity component to stabilize character movement across the network.
-        .replicate::<Velocity>()
-        .replicate::<simulation::controller::CharacterMovementState>()
-        .replicate::<Player>()
-        .replicate::<Doodad>()
-        .add_observer(init_player_mesh)
-        .add_observer(init_doodad_mesh)
         .run();
 }
-
-fn display_connection_message() {
-    info!("Connecting to server...");
-}
-
-fn show_disconnected_message() {
-    info!("Disconnected from server");
-}
-
-fn init_player_mesh(add: On<Add, Player>, mut commands: Commands, asset_server: Res<AssetServer>) {
-    let scene: Handle<Scene> = asset_server.load(format!("{}#Scene0", CHARACTER_PATH));
-    commands
-        .entity(add.entity)
-        .insert(
-            simulation::controller::CharacterPhysicsBundle::new(Collider::capsule_y(1.0, 0.5), 2.0)
-                .with_movement(60.0, 8.0, 30.0_f32.to_radians()),
-        )
-        .with_children(|commands| {
-            commands.spawn((SceneRoot(scene), Transform::from_xyz(0.0, -1.5, 0.0)));
-        });
-}
-
-fn init_doodad_mesh(
-    add: On<Add, Doodad>,
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-) {
-    // Cube 1
-    commands.entity(add.entity).insert((
-        RigidBody::Dynamic,
-        Collider::cuboid(0.5, 0.5, 0.5),
-        Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
-        MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
-    ));
-}
-
-const CHARACTER_PATH: &str = "character-large-male.glb";
-
-#[derive(Component, Serialize, Deserialize)]
-struct Player(u128);
-
-impl Default for Player {
-    fn default() -> Self {
-        // Create a UUID for the player.
-        let player_id = Uuid::new_v4().as_u128();
-        Player(player_id)
-    }
-}
-
-#[derive(Component, Serialize, Deserialize)]
-struct Doodad;
 
 /// Set up a simple 3D scene
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    cli: Res<Cli>,
-    channels: Res<RepliconChannels>,
 ) -> Result<()> {
     // Circular base
     commands.spawn((
@@ -135,26 +64,7 @@ fn setup(
         Transform::from_xyz(4.0, 8.0, 4.0),
     ));
 
-    if network::init(&mut commands, &cli, &channels)? == NetworkMode::Server {
-        spawn_server_entities(&mut commands);
-    }
-
     Ok(())
-}
-
-fn spawn_server_entities(commands: &mut Commands) {
-    commands.spawn((
-        Replicated,
-        Transform::from_xyz(0.0, 1.5, 2.0),
-        Player::default(),
-    ));
-    commands.spawn((
-        Replicated,
-        Transform::from_xyz(0.0, 1.5, 0.0),
-        Player::default(),
-    ));
-    commands.spawn((Replicated, Transform::from_xyz(0.0, 1.0, 0.0), Doodad));
-    commands.spawn((Replicated, Transform::from_xyz(1.0, 0.5, 0.0), Doodad));
 }
 
 fn ui(world: &mut World) {
